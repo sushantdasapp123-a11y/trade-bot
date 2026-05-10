@@ -1,49 +1,36 @@
 import telebot
-import requests
-import json
+import google.generativeai as genai
 import os
+import requests
 
 BOT_TOKEN = os.environ.get('BOT_TOKEN')
-ANTHROPIC_KEY = os.environ.get('ANTHROPIC_KEY')
+GEMINI_KEY = os.environ.get('GEMINI_KEY')
+
+genai.configure(api_key=GEMINI_KEY)
+model = genai.GenerativeModel('gemini-1.5-flash')
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
 @bot.message_handler(commands=['start'])
 def start(message):
-    bot.reply_to(message, "🎯 Trade Planner Bot Ready!\n\nWhatsApp trade message paste karo - AI plan banaideba!")
+    bot.reply_to(message, "🎯 Trade Planner Bot Ready!\nText ya Chart screenshot pathao!")
+
+@bot.message_handler(content_types=['photo'])
+def analyze_chart(message):
+    bot.reply_to(message, "📊 Chart analyze kaurichu...")
+    file_info = bot.get_file(message.photo[-1].file_id)
+    file = requests.get(f'https://api.telegram.org/file/bot{BOT_TOKEN}/{file_info.file_path}')
+    image_data = file.content
+    response = model.generate_content([
+        "You are a stock market expert. Analyze this chart and give complete trade plan in Odia/Hindi/English: Entry, Targets, Stop Loss, Trend, R:R ratio",
+        {"mime_type": "image/jpeg", "data": image_data}
+    ])
+    bot.reply_to(message, response.text)
 
 @bot.message_handler(func=lambda m: True)
-def analyze(message):
+def analyze_text(message):
     bot.reply_to(message, "⏳ Analyzing...")
-    
-    prompt = f"""Analyze this trade message and give complete plan in simple Odia/Hindi/English:
-
-Message: {message.text}
-
-Give:
-1. Entry price
-2. Targets (T1, T2, T3)
-3. Stop Loss
-4. Risk:Reward ratio
-5. Quantity suggestion (capital 50000, risk 2%)
-6. Short analysis"""
-
-    response = requests.post(
-        'https://api.anthropic.com/v1/messages',
-        headers={
-            'x-api-key': ANTHROPIC_KEY,
-            'anthropic-version': '2023-06-01',
-            'content-type': 'application/json'
-        },
-        json={
-            'model': 'claude-sonnet-4-20250514',
-            'max_tokens': 1000,
-            'messages': [{'role': 'user', 'content': prompt}]
-        }
-    )
-    
-    result = response.json()
-    reply = result['content'][0]['text']
-    bot.reply_to(message, reply)
+    response = model.generate_content(f"Trade plan in Odia/Hindi/English mix:\n{message.text}\nGive: Entry, Targets, SL, R:R, Quantity(capital 50000, risk 2%), Analysis")
+    bot.reply_to(message, response.text)
 
 bot.polling()
